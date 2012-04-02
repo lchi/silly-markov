@@ -6,20 +6,46 @@ class Markov
 
   def initialize(filename)
     @states = {}
-    if filename
+    @rand_gen = Random.new
+    if not File.exists?("#{CACHE}/#{filename}")
       generate_chain(File.new(filename))
       calculate_probabilities
     else
-      load_chain(File.new("#{CACHE}/data"))
+      load_chain(File.new("#{CACHE}/#{filename}"))
     end
 
-    puts JSON.pretty_generate(@states)
   end
 
+  def cache_states(filename)
+    fout = File.open("#{CACHE}/#{filename}", "w")
+    fout.write(JSON.generate(@states))
+  end
+
+  # generates a paragraph from a seed word and
+  # desired length of paragraph (in words)
+  def generate_paragraph(seed, length)
+    paragraph = seed
+    length.times do
+      n = @rand_gen.rand
+
+      new_word = ""
+      @states[seed].each do |next_word, bounds|
+        if next_word != ':totalwordcount:'
+          lower, upper = bounds[0], bounds[1]
+          if n >= lower and n < upper
+            paragraph += " #{next_word}"
+            new_word = next_word
+            break
+          end
+        end
+      end
+      seed = new_word
+    end
+    paragraph
+  end
   private
 
   def load_chain(fp)
-
   end
 
   def calculate_probabilities
@@ -94,4 +120,6 @@ class Markov
   end
 end
 
-m = Markov.new("data/king_james_bible")
+m = Markov.new("king_james_bible")
+puts m.generate_paragraph("The", 40)
+#m.cache_states("king_james_bible2.json")
