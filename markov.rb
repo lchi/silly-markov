@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+require 'json'
 
 class Markov
   CACHE = ".silly-cache"
@@ -12,6 +13,7 @@ class Markov
       load_chain(File.new("#{CACHE}/data"))
     end
 
+    puts JSON.pretty_generate(@states)
   end
 
   private
@@ -23,8 +25,8 @@ class Markov
   def calculate_probabilities
     @states.each do |word, hash|
       total_count = hash[':totalwordcount:'].to_f
-      lower_p = 0
-      upper_p = 1
+      lower_p = 0.0
+      upper_p = 0.0
       hash.each do |next_word, count|
         if next_word != ':totalwordcount:'
           upper_p = lower_p + (count / total_count)
@@ -33,13 +35,13 @@ class Markov
           # elem 0 will hold lower bound
           # elem 1 will hold upper bound
           #
-          # we will use these bounds when we look for a random 
+          # we will use these bounds when we look for a random
           # choice of next word
           hash[next_word] = []
           hash[next_word][0] = lower_p
           hash[next_word][1] = upper_p
 
-          lower_p += upper_p
+          lower_p = upper_p
         end
       end
     end
