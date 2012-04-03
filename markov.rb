@@ -32,10 +32,12 @@ class Markov
 
       # happens when we don't have words that lead to one more
       if states == nil
+        puts "miss on #{seed}"
         len = -1 * (chain_order - 1)
         loop do
           break if len.abs == chain_order
-          states = coll.find_one('word' => seed[0 .. len])
+          states = coll.find_one('word' => seed[0 .. len].to_s)
+          break if states != nil
           len -= 1
         end
       end
