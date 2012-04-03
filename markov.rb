@@ -1,19 +1,22 @@
 #!/usr/bin/env ruby
 require 'json'
+require 'mongo'
 
 class Markov
   CACHE = ".silly-cache"
   attr_accessor :ignore, :end_of_header, :begin_footer, :punct
 
-  def initialize(filename, ignore=[], end_of_header=nil, begin_footer=nil,
+  def initialize(ignore=[], end_of_header=nil, begin_footer=nil,
                  punct=/[[:punct:]]/)
     @ignore = ignore
     @end_of_header = end_of_header
     @begin_footer = begin_footer
     @punct = punct
 
-    @states = {}
     @rand_gen = Random.new
+
+    @db = Mongo::Connection.new("localhost", 27017).db("silly-markov")
+=begin
     if true
       generate_chain(File.new(filename))
 
@@ -22,7 +25,15 @@ class Markov
     else
       load_chain(File.new("#{CACHE}/#{filename}"))
     end
+=end
+  end
 
+  def parse_and_store(filename)
+    states = generate_chain(File.new(filename))
+
+    # put into mongodb
+    coll = @db.collection(filename)
+    states.each { |key, val| coll.insert({ 'word' => key, 'transitions' => val }) }
   end
 
   def cache_states(filename)
@@ -32,16 +43,20 @@ class Markov
 
   # generates a paragraph from a seed word and
   # desired length of paragraph (in words)
-  def generate_paragraph(seed, length=40)
+  def generate_paragraph(source, seed, length=40)
+    coll = @db.collection(source)
     paragraph = seed + ' '
     length.times do
-      rand_n = 1 + @rand_gen.rand(@states[seed][':totalwordcount:'])
+      seed = seed.gsub(/\./, ":dot:")
+      states = coll.find_one('word' => seed)
+      rand_n = 1 + @rand_gen.rand(states['transitions'][':totalwordcount:'])
 
       new_word = ""
-      @states[seed].each do |next_word, count|
+      states['transitions'].each do |next_word, count|
         if next_word != ':totalwordcount:'
           rand_n -= count
           if rand_n <= 0
+            next_word = next_word.gsub(/:dot:/, ".")
             paragraph.chop! if @punct.match(next_word)
             paragraph += "#{next_word} "
             new_word = next_word
@@ -85,23 +100,29 @@ class Markov
   end
 
   def generate_chain(fp)
+    states = {}
     all_words = get_all_words(fp)
     all_words.each_with_index do |word, idx|
         if idx+1 != all_words.size
-          # set an empty hash if none exists
-          @states[word] ||= {}
+          # the '.' char is not allowed in mongo keys
+          word = word.gsub(/\./, ":dot:")
 
+          # set an empty hash if none exists
+          states[word] ||= {}
+
+          next_word = all_words[idx+1].gsub(/\./, ":dot:")
           # set count of the following word to 0 if not set
-          @states[word][all_words[idx+1]] ||= 0
+          states[word][next_word] ||= 0
 
           # add one to the wordcount
-          @states[word][all_words[idx+1]] += 1
+          states[word][next_word] += 1
 
           # keeping track of how times we've seen this word
-          @states[word][':totalwordcount:'] ||= 0
-          @states[word][':totalwordcount:'] += 1
+          states[word][':totalwordcount:'] ||= 0
+          states[word][':totalwordcount:'] += 1
         end
     end
+    states
   end
 
   def get_all_words(fp)
@@ -140,7 +161,8 @@ end_of_header = /^\*\*\* START OF THIS PROJECT GUTENBERG EBOOK/
 begin_footer =  /^End of the Project Gutenberg EBook/
 punct = /[[:punct:]]/
 
-m = Markov.new("king_james_bible", ignore, end_of_header, begin_footer, punct)
+m = Markov.new(ignore, end_of_header, begin_footer, punct)
+#m.parse_and_store("king_james_bible")
 
-10.times { puts m.generate_paragraph("Moses", 40) }
+10.times { puts m.generate_paragraph("king_james_bible", "Moses", 40) }
 #m.cache_states("king_james_bible2.json")
