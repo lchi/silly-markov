@@ -28,7 +28,17 @@ class Markov
     seed = [seed]
     length.times do
       #seed = seed.gsub(/\./, ":dot:")
-      states = coll.find_one('word' => seed)
+      states = coll.find_one('word' => seed.to_s)
+
+      # happens when we don't have words that lead to one more
+      if states == nil
+        len = -1 * (chain_order - 1)
+        loop do
+          break if len.abs == chain_order
+          states = coll.find_one('word' => seed[0 .. len])
+          len -= 1
+        end
+      end
       rand_n = 1 + @rand_gen.rand(states['transitions'][':totalwordcount:'])
 
       new_word = ""
@@ -36,7 +46,7 @@ class Markov
         if next_word != ':totalwordcount:'
           rand_n -= count
           if rand_n <= 0
-            #next_word = next_word.gsub(/:dot:/, ".")
+            next_word = next_word.gsub(/:dot:/, ".")
             paragraph.chop! if @punct.match(next_word)
             paragraph += "#{next_word} "
             new_word = next_word
@@ -44,7 +54,12 @@ class Markov
           end
         end
       end
-      seed = new_word
+      if seed.length == chain_order
+        seed.delete_at(0)
+        seed << new_word
+      else
+        seed << new_word
+      end
     end
     paragraph
   end
@@ -65,32 +80,6 @@ class Markov
   end
 
   private
-
-  # DEPRECATED
-  def calculate_probabilities
-    @states.each do |word, hash|
-      total_count = hash[':totalwordcount:'].to_f
-      lower_p = 0.0
-      upper_p = 0.0
-      hash.each do |next_word, count|
-        if next_word != ':totalwordcount:'
-          upper_p = lower_p + (count / total_count)
-
-          # set next word to a list
-          # elem 0 will hold lower bound
-          # elem 1 will hold upper bound
-          #
-          # we will use these bounds when we look for a random
-          # choice of next word
-          hash[next_word] = []
-          hash[next_word][0] = lower_p
-          hash[next_word][1] = upper_p
-
-          lower_p = upper_p
-        end
-      end
-    end
-  end
 
   def chain_of_order(len, all_words)
     states = {}
