@@ -3,13 +3,22 @@ require 'json'
 
 class Markov
   CACHE = ".silly-cache"
+  attr_accessor :ignore, :end_of_header, :begin_footer, :punct
 
-  def initialize(filename)
+  def initialize(filename, ignore=[], end_of_header=nil, begin_footer=nil,
+                 punct=/[[:punct:]]/)
+    @ignore = ignore
+    @end_of_header = end_of_header
+    @begin_footer = begin_footer
+    @punct = punct
+
     @states = {}
     @rand_gen = Random.new
-    if not File.exists?("#{CACHE}/#{filename}")
+    if true
       generate_chain(File.new(filename))
-      calculate_probabilities
+
+      # I think this may be wasteful...
+      # calculate_probabilities
     else
       load_chain(File.new("#{CACHE}/#{filename}"))
     end
@@ -23,17 +32,18 @@ class Markov
 
   # generates a paragraph from a seed word and
   # desired length of paragraph (in words)
-  def generate_paragraph(seed, length)
-    paragraph = seed
+  def generate_paragraph(seed, length=40)
+    paragraph = seed + ' '
     length.times do
-      n = @rand_gen.rand
+      rand_n = 1 + @rand_gen.rand(@states[seed][':totalwordcount:'])
 
       new_word = ""
-      @states[seed].each do |next_word, bounds|
+      @states[seed].each do |next_word, count|
         if next_word != ':totalwordcount:'
-          lower, upper = bounds[0], bounds[1]
-          if n >= lower and n < upper
-            paragraph += " #{next_word}"
+          rand_n -= count
+          if rand_n <= 0
+            paragraph.chop! if @punct.match(next_word)
+            paragraph += "#{next_word} "
             new_word = next_word
             break
           end
@@ -48,6 +58,7 @@ class Markov
   def load_chain(fp)
   end
 
+  # DEPRECATED
   def calculate_probabilities
     @states.each do |word, hash|
       total_count = hash[':totalwordcount:'].to_f
@@ -94,16 +105,20 @@ class Markov
   end
 
   def get_all_words(fp)
-    process = false
+    process = @end_of_header ? false : true
     all_words = []
     fp.each do |line|
       if process
-        # ignore lines after project gutenberg footer
-        break if /^End of the Project Gutenberg EBook/.match(line)
+        # ignore lines after footer
+        if @begin_footer
+          break if begin_footer.match(line)
+        end
 
         line.split(/\s/).each do |word|
-          if not /\p{Digit}+:\p{Digit}+/.match(word) and not word.empty?
-            if /[[:punct:]]/.match(word[-1])
+          should_ignore = false
+          @ignore.each { |ig| should_ignore = true if ig.match(word) }
+          if not should_ignore and not word.empty?
+            if @punct.match(word[-1])
               all_words << word[0 .. -2]
               all_words << word[-1]
             else
@@ -112,14 +127,20 @@ class Markov
           end
         end
       else
-        # ignore lines before project gutenberg header
-        process = true if /^\*\*\* START OF THIS PROJECT GUTENBERG EBOOK/.match(line)
+        # ignore lines before header
+        process = true if @end_of_header.match(line)
       end
     end
     all_words
   end
 end
 
-m = Markov.new("king_james_bible")
-puts m.generate_paragraph("The", 40)
+ignore = [/\p{Digit}+:\p{Digit}+/]
+end_of_header = /^\*\*\* START OF THIS PROJECT GUTENBERG EBOOK/
+begin_footer =  /^End of the Project Gutenberg EBook/
+punct = /[[:punct:]]/
+
+m = Markov.new("king_james_bible", ignore, end_of_header, begin_footer, punct)
+
+10.times { puts m.generate_paragraph("Moses", 40) }
 #m.cache_states("king_james_bible2.json")
