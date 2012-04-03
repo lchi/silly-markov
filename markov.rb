@@ -16,38 +16,18 @@ class Markov
     @rand_gen = Random.new
 
     @db = Mongo::Connection.new("localhost", 27017).db("silly-markov")
-=begin
-    if true
-      generate_chain(File.new(filename))
-
-      # I think this may be wasteful...
-      # calculate_probabilities
-    else
-      load_chain(File.new("#{CACHE}/#{filename}"))
-    end
-=end
-  end
-
-  def parse_and_store(filename)
-    states = generate_chain(File.new(filename))
-
-    # put into mongodb
-    coll = @db.collection(filename)
-    states.each { |key, val| coll.insert({ 'word' => key, 'transitions' => val }) }
-  end
-
-  def cache_states(filename)
-    fout = File.open("#{CACHE}/#{filename}", "w")
-    fout.write(JSON.generate(@states))
   end
 
   # generates a paragraph from a seed word and
   # desired length of paragraph (in words)
-  def generate_paragraph(source, seed, length=40)
+  def generate_paragraph(source, seed, length=40, chain_order=2)
     coll = @db.collection(source)
+
+    # add first space
     paragraph = seed + ' '
+    seed = [seed]
     length.times do
-      seed = seed.gsub(/\./, ":dot:")
+      #seed = seed.gsub(/\./, ":dot:")
       states = coll.find_one('word' => seed)
       rand_n = 1 + @rand_gen.rand(states['transitions'][':totalwordcount:'])
 
@@ -56,7 +36,7 @@ class Markov
         if next_word != ':totalwordcount:'
           rand_n -= count
           if rand_n <= 0
-            next_word = next_word.gsub(/:dot:/, ".")
+            #next_word = next_word.gsub(/:dot:/, ".")
             paragraph.chop! if @punct.match(next_word)
             paragraph += "#{next_word} "
             new_word = next_word
@@ -68,10 +48,23 @@ class Markov
     end
     paragraph
   end
-  private
 
-  def load_chain(fp)
+  def parse_and_store(filename, chain_order=2)
+    puts "Parsing #{filename}"
+    all_words = get_all_words(File.new(filename))
+    puts "Done parsing, now creating chains..."
+    coll = @db.collection(filename)
+    chain_order.times do |i|
+      states = chain_of_order(i+1, all_words)
+
+      # put into mongodb
+      states.each { |k, val| coll.insert({ 'word' => k, 'transitions' => val }) }
+      coll.create_index("word")
+      puts "Inserted #{states.count} records into mongo for chain of order #{i+1}"
+    end
   end
+
+  private
 
   # DEPRECATED
   def calculate_probabilities
@@ -99,28 +92,42 @@ class Markov
     end
   end
 
-  def generate_chain(fp)
+  def chain_of_order(len, all_words)
     states = {}
-    all_words = get_all_words(fp)
+    len_words = []
     all_words.each_with_index do |word, idx|
-        if idx+1 != all_words.size
-          # the '.' char is not allowed in mongo keys
-          word = word.gsub(/\./, ":dot:")
+      if idx < len
+        len_words[idx] = word
+        next
+      end
 
-          # set an empty hash if none exists
-          states[word] ||= {}
+      if idx+1 != all_words.length
+        # the '.' char is not allowed in mongo keys
+        #len_words.each { |word| word = word.gsub(/\./, ":dot:") }
 
-          next_word = all_words[idx+1].gsub(/\./, ":dot:")
-          # set count of the following word to 0 if not set
-          states[word][next_word] ||= 0
+        # need to serialize the array to a str, otherwise the
+        # object itself is used as the key (and changes...fml)
+        key = len_words.to_s
 
-          # add one to the wordcount
-          states[word][next_word] += 1
+        # set an empty hash if none exists
+        states[key] ||= {}
 
-          # keeping track of how times we've seen this word
-          states[word][':totalwordcount:'] ||= 0
-          states[word][':totalwordcount:'] += 1
-        end
+        # the '.' char is not allowed in mongo keys
+        next_word = all_words[idx+1].gsub(/\./, ":dot:")
+
+        # set count of the following word to 0 if not set
+        # and add one to the count
+        states[key][next_word] ||= 0
+        states[key][next_word] += 1
+
+        # keeping track of how times we've seen this word
+        states[key][':totalwordcount:'] ||= 0
+        states[key][':totalwordcount:'] += 1
+
+        # remove oldest word, append newest
+        len_words.delete_at(0)
+        len_words << all_words[idx+1]
+      end
     end
     states
   end
@@ -156,13 +163,3 @@ class Markov
   end
 end
 
-ignore = [/\p{Digit}+:\p{Digit}+/]
-end_of_header = /^\*\*\* START OF THIS PROJECT GUTENBERG EBOOK/
-begin_footer =  /^End of the Project Gutenberg EBook/
-punct = /[[:punct:]]/
-
-m = Markov.new(ignore, end_of_header, begin_footer, punct)
-#m.parse_and_store("king_james_bible")
-
-10.times { puts m.generate_paragraph("king_james_bible", "Moses", 40) }
-#m.cache_states("king_james_bible2.json")
