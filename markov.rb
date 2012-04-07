@@ -26,7 +26,12 @@ class Markov
     # add first space
     paragraph = seed + ' '
     seed = [seed]
-    length.times do
+    counter = 0
+    loop do
+      # must end on period
+      if counter > length and paragraph[-2] == '.'
+        break
+      end
       #seed = seed.gsub(/\./, ":dot:")
       states = coll.find_one('word' => seed.to_s)
 
@@ -62,6 +67,7 @@ class Markov
       else
         seed << new_word
       end
+      counter += 1
     end
     paragraph
   end
@@ -140,6 +146,9 @@ class Markov
             if @punct.match(word[-1])
               all_words << word[0 .. -2]
               all_words << word[-1]
+            elsif @punct.match(word[0])
+              all_words << word[0]
+              all_words << word[1 .. -1]
             else
               all_words << word
             end
