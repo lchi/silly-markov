@@ -37,7 +37,6 @@ class Markov
 
       # happens when we don't have words that lead to one more
       if states == nil
-        puts "miss on #{seed}"
         len = -1 * (chain_order - 1)
         loop do
           break if len.abs == chain_order
@@ -72,18 +71,33 @@ class Markov
     paragraph
   end
 
-  def parse_and_store(filename, chain_order=2)
+  def parse_and_store(filename, chain_order=2, db_name=nil)
+    db_name = filename if db_name == nil
     puts "Parsing #{filename}"
     all_words = get_all_words(File.new(filename))
     puts "Done parsing, now creating chains..."
-    coll = @db.collection(filename)
+    coll = @db.collection(db_name)
     chain_order.times do |i|
       states = chain_of_order(i+1, all_words)
 
       # put into mongodb
-      states.each { |k, val| coll.insert({ 'word' => k, 'transitions' => val }) }
+      states.each do |k, val|
+        existing = coll.find_one('word' => k)
+        if existing == nil
+          coll.insert({ 'word' => k, 'transitions' => val })
+        else
+          val.each do |word, count|
+            if existing['transitions'][word] != nil
+              existing['transitions'][word] += count
+            else
+              existing['transitions'][word] = count
+            end
+          end
+          coll.save(existing)
+        end
+      end
       coll.create_index("word")
-      puts "Inserted #{states.count} records into mongo for chain of order #{i+1}"
+      puts "Inserted #{states.count} records into '#{db_name}' for chain of order #{i+1}"
     end
   end
 
