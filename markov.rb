@@ -1,5 +1,4 @@
 #!/usr/bin/env ruby
-require 'json'
 require 'mongo'
 
 class Markov
