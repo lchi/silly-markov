@@ -1,7 +1,12 @@
 Silly Markov
 ------------
 
-A ruby markov chain library for doing silly things.
+A ruby markov chain library for doing silly things.  To use it you'll need [MongoDB](http://www.mongodb.org/) and the ruby drivers for mongo.  This library is still under heavy development and is very, very ugly.  I'm working on making it simpler to use at the moment, so hang on tight if you want something simple and easy to use.  Right now it can do most books from [Project Gutenberg](http://www.gutenberg.org/) in plain text form, though it might have trouble with the way they do quotes.
+
+How to use
+----------
+
+Again, this library is still under heavy development and is very, very ugly.  For use examples please see `load_cookbooks.rb` and `cookbook_str.rb`.
 
 Sample output
 -------------
